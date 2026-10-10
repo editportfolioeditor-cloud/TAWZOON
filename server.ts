@@ -3069,13 +3069,14 @@ app.patch('/api/admin/sales/:id/approve', verifyAdmin, (req: Request, res: Respo
               ) : null);
 
           if (parentEmp && s.commissionAmount > 0) {
-            // Check if parent has a specific override for this downline member, else fallback to parent's rate, else default ৳10 max bonus limit
-            // Formula: Referral Bonus = MIN(Profit * 10%, Admin-set Maximum Bonus Limit)
-            const maxBonusLimit = getEmployeeReferralMarkup(emp, state);
+            // Proportional percentage commission based on parent's commission rate / margin (e.g. 10% rate means profit * rate / 100)
+            const ratePercent = (parentEmp.downlineCustomRates && parentEmp.downlineCustomRates[emp.id] !== undefined)
+              ? Number(parentEmp.downlineCustomRates[emp.id])
+              : (parentEmp.referralCommissionRate !== undefined ? Number(parentEmp.referralCommissionRate) : (parentEmp.resellerMargin !== undefined ? Number(parentEmp.resellerMargin) : 10));
 
-            if (maxBonusLimit > 0) {
+            if (ratePercent > 0) {
               const profit = s.commissionAmount || 0;
-              const referralBonus = Math.max(0, Math.round(Math.min(profit * 0.1, maxBonusLimit)));
+              const referralBonus = Math.max(0, Math.round(profit * (ratePercent / 100)));
               if (referralBonus > 0) {
                 parentEmp.wallet.availableBalance += referralBonus;
                 parentEmp.wallet.totalEarnings += referralBonus;
@@ -3088,7 +3089,7 @@ app.patch('/api/admin/sales/:id/approve', verifyAdmin, (req: Request, res: Respo
                   balanceAfter: parentEmp.wallet.availableBalance,
                   status: 'COMPLETED',
                   reference: s.orderCode,
-                  description: `রেফারেল টিম প্রফিট: ${emp.name} এর অর্ডার #${s.orderCode} থেকে (১০% প্রফিট, সর্বোচ্চ ৳${maxBonusLimit} লিমিট অনুযায়ী ৳${referralBonus})`,
+                  description: `রেফারেল টিম প্রফিট: ${emp.name} এর অর্ডার #${s.orderCode} থেকে (${ratePercent}% প্রফিট অনুপাত অনুযায়ী ৳${referralBonus})`,
                   timestamp: new Date().toISOString()
                 });
 
@@ -3097,7 +3098,7 @@ app.patch('/api/admin/sales/:id/approve', verifyAdmin, (req: Request, res: Respo
                   employeeId: parentEmp.id,
                   titleBn: 'রেফারেল প্রফিট বোনাস জমা হয়েছে',
                   titleEn: 'Referral Bonus Credited',
-                  messageBn: `আপনার টিমের সদস্য ${emp.name} এর সেলস সফল হওয়ায় আপনি ৳${referralBonus} রেফারেল লাভ পেয়েছেন (সর্বোচ্চ লিমিট ৳${maxBonusLimit})।`,
+                  messageBn: `আপনার টিমের সদস্য ${emp.name} এর সেলস সফল হওয়ায় আপনি ৳${referralBonus} রেফারেল লাভ পেয়েছেন (${ratePercent}% অনুপাতে)।`,
                   messageEn: `You earned ৳${referralBonus} referral bonus from ${emp.name}'s delivered order #${s.orderCode}.`,
                   type: 'COMMISSION'
                 });
